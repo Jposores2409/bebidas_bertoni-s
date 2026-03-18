@@ -14,7 +14,7 @@ export default function Productos() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
-  const [stockModal, setStockModal] = useState(null) // { producto, tipo }
+  const [stockModal, setStockModal] = useState(null)
   const [editando, setEditando] = useState(null)
   const [form, setForm] = useState(EMPTY_PRODUCTO)
   const [stockCantidad, setStockCantidad] = useState('')
@@ -71,13 +71,11 @@ export default function Productos() {
       categoria: form.categoria,
       codigo: form.codigo || null,
     }
-
     if (editando) {
       await supabase.from('productos').update(payload).eq('id', editando.id)
     } else {
       await supabase.from('productos').insert(payload)
     }
-
     setModalOpen(false)
     setSaving(false)
     loadProductos()
@@ -94,11 +92,9 @@ export default function Productos() {
     setSaving(true)
     const cantidad = parseInt(stockCantidad)
     if (!cantidad || cantidad <= 0) return
-
     const { data: prod } = await supabase.from('productos').select('stock').eq('id', stockModal.producto.id).single()
     const stockAnterior = prod.stock
     const stockNuevo = stockModal.tipo === 'entrada' ? stockAnterior + cantidad : Math.max(0, stockAnterior - cantidad)
-
     await supabase.from('productos').update({ stock: stockNuevo }).eq('id', stockModal.producto.id)
     await supabase.from('stock_movimientos').insert({
       producto_id: stockModal.producto.id,
@@ -108,7 +104,6 @@ export default function Productos() {
       stock_anterior: stockAnterior,
       stock_nuevo: stockNuevo
     })
-
     setStockModal(null)
     setStockCantidad('')
     setStockMotivo('')
@@ -142,7 +137,7 @@ export default function Productos() {
         </div>
       </div>
 
-      {/* Table */}
+      {/* Tabla desktop / Cards mobile */}
       <div className="card" style={{ padding: 0 }}>
         {loading ? (
           <div style={{ padding: 40 }}><div className="spinner" /></div>
@@ -153,73 +148,119 @@ export default function Productos() {
             <p>{search ? 'No hay resultados para tu búsqueda' : 'Creá tu primer producto'}</p>
           </div>
         ) : (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Producto</th>
-                  <th>Categoría</th>
-                  <th>Precio</th>
-                  <th>Costo</th>
-                  <th>Stock</th>
-                  <th>Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map(p => (
-                  <tr key={p.id}>
-                    <td>
-                      <div style={{ fontWeight: 600 }}>{p.nombre}</div>
-                      {p.codigo && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{p.codigo}</div>}
-                    </td>
-                    <td><span className="badge badge-blue">{p.categoria}</span></td>
-                    <td style={{ fontFamily: 'Outfit', fontWeight: 600 }}>${Number(p.precio).toLocaleString('es-AR')}</td>
-                    <td style={{ color: 'var(--text-muted)' }}>${Number(p.costo).toLocaleString('es-AR')}</td>
-                    <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontWeight: 600, color: p.stock <= p.stock_minimo ? '#facc15' : undefined }}>
-                          {p.stock}
-                          {p.stock <= p.stock_minimo && <AlertTriangle size={13} style={{ marginLeft: 5, verticalAlign: 'middle', color: '#facc15' }} />}
-                        </span>
-                        <div style={{ display: 'flex', gap: 4 }}>
-                          <button
-                            className="btn btn-sm btn-secondary"
-                            style={{ padding: '4px 8px' }}
-                            title="Entrada de stock"
-                            onClick={() => { setStockModal({ producto: p, tipo: 'entrada' }); setStockCantidad(''); setStockMotivo('') }}
-                          >
-                            <ArrowUp size={13} style={{ color: '#4ade80' }} />
-                          </button>
-                          <button
-                            className="btn btn-sm btn-secondary"
-                            style={{ padding: '4px 8px' }}
-                            title="Salida de stock"
-                            onClick={() => { setStockModal({ producto: p, tipo: 'salida' }); setStockCantidad(''); setStockMotivo('') }}
-                          >
-                            <ArrowDown size={13} style={{ color: '#f87171' }} />
-                          </button>
-                        </div>
+          <>
+            {/* Desktop tabla */}
+            <div className="prod-desktop">
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Producto</th>
+                      <th>Categoría</th>
+                      <th>Precio</th>
+                      <th>Costo</th>
+                      <th>Stock</th>
+                      <th>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.map(p => (
+                      <tr key={p.id}>
+                        <td>
+                          <div style={{ fontWeight: 600 }}>{p.nombre}</div>
+                          {p.codigo && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{p.codigo}</div>}
+                        </td>
+                        <td><span className="badge badge-blue">{p.categoria}</span></td>
+                        <td style={{ fontFamily: 'Outfit', fontWeight: 600 }}>${Number(p.precio).toLocaleString('es-AR')}</td>
+                        <td style={{ color: 'var(--text-muted)' }}>${Number(p.costo).toLocaleString('es-AR')}</td>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontWeight: 600, color: p.stock <= p.stock_minimo ? '#facc15' : undefined }}>
+                              {p.stock}
+                              {p.stock <= p.stock_minimo && <AlertTriangle size={13} style={{ marginLeft: 5, verticalAlign: 'middle', color: '#facc15' }} />}
+                            </span>
+                            <div style={{ display: 'flex', gap: 4 }}>
+                              <button className="btn btn-sm btn-secondary" style={{ padding: '4px 8px' }} title="Entrada"
+                                onClick={() => { setStockModal({ producto: p, tipo: 'entrada' }); setStockCantidad(''); setStockMotivo('') }}>
+                                <ArrowUp size={13} style={{ color: '#4ade80' }} />
+                              </button>
+                              <button className="btn btn-sm btn-secondary" style={{ padding: '4px 8px' }} title="Salida"
+                                onClick={() => { setStockModal({ producto: p, tipo: 'salida' }); setStockCantidad(''); setStockMotivo('') }}>
+                                <ArrowDown size={13} style={{ color: '#f87171' }} />
+                              </button>
+                            </div>
+                          </div>
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button className="btn btn-sm btn-secondary" onClick={() => openEdit(p)}><Edit2 size={13} /></button>
+                            <button className="btn btn-sm btn-danger" onClick={() => setDeleteConfirm(p)}><Trash2 size={13} /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Mobile cards */}
+            <div className="prod-mobile">
+              {filtered.map(p => (
+                <div key={p.id} style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {p.nombre}
                       </div>
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <button className="btn btn-sm btn-secondary" onClick={() => openEdit(p)}>
-                          <Edit2 size={13} />
-                        </button>
-                        <button className="btn btn-sm btn-danger" onClick={() => setDeleteConfirm(p)}>
-                          <Trash2 size={13} />
-                        </button>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
+                        <span className="badge badge-blue" style={{ fontSize: 10 }}>{p.categoria}</span>
+                        {p.codigo && <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{p.codigo}</span>}
                       </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    </div>
+                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                      <div style={{ fontFamily: 'Outfit', fontWeight: 700, fontSize: 16 }}>
+                        ${Number(p.precio).toLocaleString('es-AR')}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                        costo ${Number(p.costo).toLocaleString('es-AR')}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Stock y acciones */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: p.stock <= p.stock_minimo ? '#facc15' : '#4ade80' }}>
+                        Stock: {p.stock}
+                        {p.stock <= p.stock_minimo && <AlertTriangle size={12} style={{ marginLeft: 4, verticalAlign: 'middle' }} />}
+                      </span>
+                      <button className="btn btn-sm btn-secondary" style={{ padding: '5px 10px' }}
+                        onClick={() => { setStockModal({ producto: p, tipo: 'entrada' }); setStockCantidad(''); setStockMotivo('') }}>
+                        <ArrowUp size={13} style={{ color: '#4ade80' }} />
+                      </button>
+                      <button className="btn btn-sm btn-secondary" style={{ padding: '5px 10px' }}
+                        onClick={() => { setStockModal({ producto: p, tipo: 'salida' }); setStockCantidad(''); setStockMotivo('') }}>
+                        <ArrowDown size={13} style={{ color: '#f87171' }} />
+                      </button>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button className="btn btn-sm btn-secondary" onClick={() => openEdit(p)}>
+                        <Edit2 size={13} />
+                      </button>
+                      <button className="btn btn-sm btn-danger" onClick={() => setDeleteConfirm(p)}>
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </div>
 
-      {/* Create/Edit Modal */}
+      {/* Modal Crear/Editar */}
       {modalOpen && (
         <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && setModalOpen(false)}>
           <div className="modal">
@@ -279,7 +320,7 @@ export default function Productos() {
         </div>
       )}
 
-      {/* Stock Modal */}
+      {/* Modal Stock */}
       {stockModal && (
         <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && setStockModal(null)}>
           <div className="modal" style={{ maxWidth: 380 }}>
@@ -293,7 +334,9 @@ export default function Productos() {
               <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                 <div style={{ padding: '10px 14px', background: 'var(--surface2)', borderRadius: 10, border: '1px solid var(--border)' }}>
                   <div style={{ fontSize: 13, fontWeight: 600 }}>{stockModal.producto.nombre}</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>Stock actual: <strong style={{ color: 'var(--text)' }}>{stockModal.producto.stock}</strong></div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                    Stock actual: <strong style={{ color: 'var(--text)' }}>{stockModal.producto.stock}</strong>
+                  </div>
                 </div>
                 <div>
                   <label className="form-label">Cantidad *</label>
@@ -315,7 +358,7 @@ export default function Productos() {
         </div>
       )}
 
-      {/* Delete Confirm */}
+      {/* Confirmar eliminar */}
       {deleteConfirm && (
         <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && setDeleteConfirm(null)}>
           <div className="modal" style={{ maxWidth: 360 }}>
@@ -337,6 +380,16 @@ export default function Productos() {
           </div>
         </div>
       )}
+
+      <style>{`
+        .prod-desktop { display: block; }
+        .prod-mobile { display: none; }
+
+        @media (max-width: 768px) {
+          .prod-desktop { display: none; }
+          .prod-mobile { display: block; }
+        }
+      `}</style>
     </div>
   )
 }

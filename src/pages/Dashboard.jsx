@@ -4,7 +4,7 @@ import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import {
   TrendingUp, Package, Receipt, DollarSign,
-  AlertTriangle, ShoppingCart, ArrowUpRight
+  AlertTriangle, ShoppingCart
 } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 
@@ -16,13 +16,10 @@ export default function Dashboard() {
 
   const today = format(new Date(), "yyyy-MM-dd")
 
-  useEffect(() => {
-    loadDashboard()
-  }, [])
+  useEffect(() => { loadDashboard() }, [])
 
   async function loadDashboard() {
     try {
-      // Ventas de hoy
       const { data: ventasHoy } = await supabase
         .from('ventas')
         .select('total')
@@ -32,7 +29,6 @@ export default function Dashboard() {
 
       const totalHoy = ventasHoy?.reduce((s, v) => s + Number(v.total), 0) ?? 0
 
-      // Total productos y stock bajo
       const { data: productos } = await supabase.from('productos').select('stock, stock_minimo').eq('activo', true)
       const stockBajo = productos?.filter(p => p.stock <= p.stock_minimo).length ?? 0
 
@@ -43,16 +39,13 @@ export default function Dashboard() {
         stock_bajo: stockBajo
       })
 
-      // Últimas ventas
       const { data: recientes } = await supabase
         .from('ventas')
         .select('*, venta_items(count)')
         .order('created_at', { ascending: false })
         .limit(5)
-
       setVentasRecientes(recientes ?? [])
 
-      // Datos para gráfico (últimos 7 días)
       const dias = []
       for (let i = 6; i >= 0; i--) {
         const d = new Date()
@@ -67,14 +60,9 @@ export default function Dashboard() {
           .gte('created_at', `${dia}T00:00:00`)
           .lte('created_at', `${dia}T23:59:59`)
           .eq('estado', 'completada')
-
         const total = data?.reduce((s, v) => s + Number(v.total), 0) ?? 0
-        return {
-          dia: format(new Date(dia + 'T12:00:00'), 'EEE', { locale: es }),
-          total
-        }
+        return { dia: format(new Date(dia + 'T12:00:00'), 'EEE', { locale: es }), total }
       }))
-
       setChartData(chartRows)
     } catch (err) {
       console.error(err)
@@ -99,15 +87,15 @@ export default function Dashboard() {
   return (
     <div>
       <div className="page-header">
-        <h1 className="page-title">Panel Principal</h1>
+        <h1 className="page-title">Dashboard</h1>
         <p className="page-subtitle">{format(new Date(), "EEEE d 'de' MMMM, yyyy", { locale: es })}</p>
       </div>
 
       {/* Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 28 }}>
+      <div className="dash-stats">
         <div className="stat-card">
-          <div className="stat-icon" style={{ background: 'rgba(99,102,241,0.15)' }}>
-            <DollarSign size={22} color="#818cf8" />
+          <div className="stat-icon" style={{ background: 'rgba(26,95,168,0.15)' }}>
+            <DollarSign size={22} color="#7eb8f5" />
           </div>
           <div>
             <div className="stat-value">${stats.total_hoy.toLocaleString('es-AR')}</div>
@@ -148,7 +136,8 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: 20 }}>
+      {/* Chart + Recientes */}
+      <div className="dash-bottom">
         {/* Chart */}
         <div className="card">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
@@ -158,17 +147,17 @@ export default function Dashboard() {
             </div>
             <TrendingUp size={18} color="var(--text-muted)" />
           </div>
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={chartData} barSize={28}>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={chartData} barSize={24}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
               <XAxis dataKey="dia" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 12 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `$${v.toLocaleString('es-AR')}`} />
+              <YAxis tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => `$${v.toLocaleString('es-AR')}`} width={70} />
               <Tooltip
                 contentStyle={{ background: '#1a1a28', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, fontSize: 13 }}
                 formatter={v => [`$${Number(v).toLocaleString('es-AR')}`, 'Total']}
-                cursor={{ fill: 'rgba(99,102,241,0.08)' }}
+                cursor={{ fill: 'rgba(26,95,168,0.08)' }}
               />
-              <Bar dataKey="total" fill="#6366f1" radius={[6, 6, 0, 0]} />
+              <Bar dataKey="total" fill="#1a5fa8" radius={[6, 6, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -195,10 +184,7 @@ export default function Dashboard() {
                     <div style={{ fontSize: 13, fontWeight: 600 }}>{v.numero_factura}</div>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
                       {format(new Date(v.created_at), 'HH:mm')} ·
-                      <span style={{
-                        marginLeft: 4,
-                        color: metodos[v.metodo_pago]?.color ?? '#fff'
-                      }}>
+                      <span style={{ marginLeft: 4, color: metodos[v.metodo_pago]?.color ?? '#fff' }}>
                         {metodos[v.metodo_pago]?.label ?? v.metodo_pago}
                       </span>
                     </div>
@@ -217,6 +203,46 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      <style>{`
+        .dash-stats {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 16px;
+          margin-bottom: 20px;
+        }
+        .dash-bottom {
+          display: grid;
+          grid-template-columns: 1fr 340px;
+          gap: 20px;
+        }
+
+        @media (max-width: 1024px) {
+          .dash-bottom {
+            grid-template-columns: 1fr;
+          }
+        }
+
+        @media (max-width: 768px) {
+          .dash-stats {
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+          }
+          .dash-bottom {
+            grid-template-columns: 1fr;
+            gap: 12px;
+          }
+          .stat-value {
+            font-size: 20px !important;
+          }
+        }
+
+        @media (max-width: 400px) {
+          .dash-stats {
+            grid-template-columns: 1fr 1fr;
+          }
+        }
+      `}</style>
     </div>
   )
 }

@@ -20,7 +20,6 @@ export default function CierreCaja() {
     setLoading(true)
     setSuccess(false)
 
-    // Verificar si ya existe un cierre para esa fecha
     const { data: cierre } = await supabase
       .from('cierres_caja')
       .select('*')
@@ -29,8 +28,8 @@ export default function CierreCaja() {
 
     setCierreExistente(cierre)
     if (cierre) setNotas(cierre.notas ?? '')
+    else setNotas('')
 
-    // Ventas del día
     const { data: ventas } = await supabase
       .from('ventas')
       .select('*')
@@ -38,19 +37,13 @@ export default function CierreCaja() {
       .lte('created_at', `${fecha}T23:59:59`)
       .eq('estado', 'completada')
 
-    const totalesPorMetodo = {
-      efectivo: 0, transferencia: 0, credito: 0, debito: 0
-    }
-
+    const totalesPorMetodo = { efectivo: 0, transferencia: 0, credito: 0, debito: 0 }
     ventas?.forEach(v => {
-      if (totalesPorMetodo[v.metodo_pago] !== undefined) {
+      if (totalesPorMetodo[v.metodo_pago] !== undefined)
         totalesPorMetodo[v.metodo_pago] += Number(v.total)
-      }
     })
-
     const totalVentas = Object.values(totalesPorMetodo).reduce((s, v) => s + v, 0)
 
-    // Movimientos de stock del día
     const { data: movs } = await supabase
       .from('stock_movimientos')
       .select('*, productos(nombre)')
@@ -86,13 +79,11 @@ export default function CierreCaja() {
       productos_ingresados: resumen.productos_ingresados,
       notas: notas || null,
     }
-
     if (cierreExistente) {
       await supabase.from('cierres_caja').update(payload).eq('id', cierreExistente.id)
     } else {
       await supabase.from('cierres_caja').insert(payload)
     }
-
     setSaving(false)
     setSuccess(true)
     loadData()
@@ -115,7 +106,7 @@ export default function CierreCaja() {
 
   return (
     <div>
-      <div className="page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+      <div className="cierre-header">
         <div>
           <h1 className="page-title">Cierre de caja</h1>
           <p className="page-subtitle">Resumen diario de ventas y movimientos</p>
@@ -123,16 +114,16 @@ export default function CierreCaja() {
 
         {/* Selector de fecha */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '8px 14px' }}>
-          <button onClick={() => cambiarDia(-1)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex' }}>
+          <button onClick={() => cambiarDia(-1)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', padding: 4 }}>
             <ChevronLeft size={18} />
           </button>
           <input
             type="date"
             value={fecha}
             onChange={e => setFecha(e.target.value)}
-            style={{ background: 'none', border: 'none', color: 'var(--text)', fontSize: 14, fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer', outline: 'none' }}
+            style={{ background: 'none', border: 'none', color: 'var(--text)', fontSize: 14, fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer', outline: 'none', minWidth: 0 }}
           />
-          <button onClick={() => cambiarDia(1)} style={{ background: 'none', border: 'none', color: esHoy ? 'rgba(255,255,255,0.15)' : 'var(--text-muted)', cursor: esHoy ? 'not-allowed' : 'pointer', display: 'flex' }} disabled={esHoy}>
+          <button onClick={() => cambiarDia(1)} style={{ background: 'none', border: 'none', color: esHoy ? 'rgba(255,255,255,0.15)' : 'var(--text-muted)', cursor: esHoy ? 'not-allowed' : 'pointer', display: 'flex', padding: 4 }} disabled={esHoy}>
             <ChevronRight size={18} />
           </button>
         </div>
@@ -144,7 +135,7 @@ export default function CierreCaja() {
         </div>
       ) : (
         <>
-          {/* Estado del cierre */}
+          {/* Alertas */}
           {cierreExistente && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 12, marginBottom: 20 }}>
               <Check size={16} color="#4ade80" />
@@ -169,7 +160,7 @@ export default function CierreCaja() {
           )}
 
           {/* Total del día */}
-          <div style={{ background: 'linear-gradient(135deg, rgba(99,102,241,0.15), rgba(139,92,246,0.1))', border: '1px solid rgba(99,102,241,0.25)', borderRadius: 20, padding: '24px 28px', marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
+          <div className="cierre-total-card">
             <div>
               <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total del día</div>
               <div style={{ fontFamily: 'Outfit', fontWeight: 800, fontSize: 42, color: '#fff', letterSpacing: '-2px', lineHeight: 1.1 }}>
@@ -180,7 +171,7 @@ export default function CierreCaja() {
                 {format(new Date(fecha + 'T12:00:00'), "EEEE d 'de' MMMM", { locale: es })}
               </div>
             </div>
-            <div style={{ display: 'flex', gap: 20 }}>
+            <div className="cierre-total-stats">
               <div style={{ textAlign: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5, color: '#4ade80', fontWeight: 700, fontSize: 20, fontFamily: 'Outfit' }}>
                   <ArrowDown size={18} />{resumen?.productos_vendidos}
@@ -196,15 +187,15 @@ export default function CierreCaja() {
             </div>
           </div>
 
-          {/* Por método de pago */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14, marginBottom: 24 }}>
+          {/* Métodos de pago */}
+          <div className="cierre-metodos">
             {metodosDisplay.map(({ key, label, Icon, color, bg }) => (
               <div key={key} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: '16px 18px', display: 'flex', alignItems: 'center', gap: 14 }}>
-                <div style={{ width: 42, height: 42, background: bg, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ width: 42, height: 42, background: bg, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   <Icon size={20} color={color} />
                 </div>
-                <div>
-                  <div style={{ fontFamily: 'Outfit', fontWeight: 700, fontSize: 22, color }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontFamily: 'Outfit', fontWeight: 700, fontSize: 20, color }}>
                     ${Number(resumen?.[key] ?? 0).toLocaleString('es-AR')}
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{label}</div>
@@ -224,42 +215,69 @@ export default function CierreCaja() {
                 <p>Sin movimientos de stock</p>
               </div>
             ) : (
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Producto</th>
-                      <th>Tipo</th>
-                      <th>Cantidad</th>
-                      <th>Stock anterior</th>
-                      <th>Stock nuevo</th>
-                      <th>Motivo</th>
-                      <th>Hora</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {movimientos.map(m => (
-                      <tr key={m.id}>
-                        <td style={{ fontWeight: 600 }}>{m.productos?.nombre ?? '—'}</td>
-                        <td>
-                          <span className={`badge badge-${m.tipo === 'entrada' ? 'green' : m.tipo === 'salida' ? 'red' : 'yellow'}`}>
-                            {m.tipo}
-                          </span>
-                        </td>
-                        <td style={{ fontFamily: 'Outfit', fontWeight: 700, color: m.tipo === 'entrada' ? '#4ade80' : '#f87171' }}>
+              <>
+                {/* Desktop tabla */}
+                <div className="movs-desktop">
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Producto</th>
+                          <th>Tipo</th>
+                          <th>Cantidad</th>
+                          <th>Stock anterior</th>
+                          <th>Stock nuevo</th>
+                          <th>Motivo</th>
+                          <th>Hora</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {movimientos.map(m => (
+                          <tr key={m.id}>
+                            <td style={{ fontWeight: 600 }}>{m.productos?.nombre ?? '—'}</td>
+                            <td>
+                              <span className={`badge badge-${m.tipo === 'entrada' ? 'green' : m.tipo === 'salida' ? 'red' : 'yellow'}`}>
+                                {m.tipo}
+                              </span>
+                            </td>
+                            <td style={{ fontFamily: 'Outfit', fontWeight: 700, color: m.tipo === 'entrada' ? '#4ade80' : '#f87171' }}>
+                              {m.tipo === 'entrada' ? '+' : '-'}{m.cantidad}
+                            </td>
+                            <td style={{ color: 'var(--text-muted)' }}>{m.stock_anterior}</td>
+                            <td>{m.stock_nuevo}</td>
+                            <td style={{ color: 'var(--text-muted)', fontSize: 13 }}>{m.motivo ?? '—'}</td>
+                            <td style={{ color: 'var(--text-muted)', fontSize: 13 }}>{format(new Date(m.created_at), 'HH:mm')}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Mobile cards */}
+                <div className="movs-mobile">
+                  {movimientos.map(m => (
+                    <div key={m.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {m.productos?.nombre ?? '—'}
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3 }}>
+                          {m.motivo ?? 'Sin motivo'} · {format(new Date(m.created_at), 'HH:mm')}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: 12 }}>
+                        <div style={{ fontFamily: 'Outfit', fontWeight: 700, fontSize: 16, color: m.tipo === 'entrada' ? '#4ade80' : '#f87171' }}>
                           {m.tipo === 'entrada' ? '+' : '-'}{m.cantidad}
-                        </td>
-                        <td style={{ color: 'var(--text-muted)' }}>{m.stock_anterior}</td>
-                        <td>{m.stock_nuevo}</td>
-                        <td style={{ color: 'var(--text-muted)', fontSize: 13 }}>{m.motivo ?? '—'}</td>
-                        <td style={{ color: 'var(--text-muted)', fontSize: 13 }}>
-                          {format(new Date(m.created_at), 'HH:mm')}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                        </div>
+                        <span className={`badge badge-${m.tipo === 'entrada' ? 'green' : m.tipo === 'salida' ? 'red' : 'yellow'}`} style={{ fontSize: 10 }}>
+                          {m.tipo}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
             )}
           </div>
 
@@ -278,6 +296,81 @@ export default function CierreCaja() {
           </div>
         </>
       )}
+
+      <style>{`
+        .cierre-header {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          flex-wrap: wrap;
+          gap: 12px;
+          margin-bottom: 28px;
+        }
+        .cierre-total-card {
+          background: linear-gradient(135deg, rgba(26,95,168,0.15), rgba(30,77,140,0.1));
+          border: 1px solid rgba(26,95,168,0.25);
+          border-radius: 20px;
+          padding: 24px 28px;
+          margin-bottom: 24px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          flex-wrap: wrap;
+          gap: 16px;
+        }
+        .cierre-total-stats {
+          display: flex;
+          gap: 20px;
+        }
+        .cierre-metodos {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 14px;
+          margin-bottom: 24px;
+        }
+        .movs-desktop { display: block; }
+        .movs-mobile { display: none; }
+
+        @media (max-width: 900px) {
+          .cierre-metodos {
+            grid-template-columns: 1fr 1fr;
+          }
+        }
+
+        @media (max-width: 768px) {
+          .cierre-header {
+            flex-direction: column;
+            align-items: stretch;
+          }
+          .cierre-total-card {
+            padding: 20px;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 16px;
+          }
+          .cierre-total-card > div:first-child > div:nth-child(2) {
+            font-size: 34px !important;
+            letter-spacing: -1px !important;
+          }
+          .cierre-total-stats {
+            width: 100%;
+            justify-content: flex-start;
+            gap: 28px;
+          }
+          .cierre-metodos {
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+          }
+          .movs-desktop { display: none; }
+          .movs-mobile { display: block; }
+        }
+
+        @media (max-width: 400px) {
+          .cierre-metodos {
+            grid-template-columns: 1fr 1fr;
+          }
+        }
+      `}</style>
     </div>
   )
 }
