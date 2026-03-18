@@ -30,7 +30,7 @@ export default function Login() {
       <div className="login-card">
         <div className="login-logo">
           <img src="/logo.jpg" alt="Bertoni & Bebidas" className="login-logo-img" />
-          <p className="login-subtitle">Sistema de gestión</p>
+          <p className="login-subtitle">Bebidas Bertoni´s</p>
         </div>
 
         <form onSubmit={handleSubmit} className="login-form">
