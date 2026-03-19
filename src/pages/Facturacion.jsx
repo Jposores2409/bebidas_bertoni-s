@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { Search, Trash2, X, Receipt, ShoppingCart, Tag, Check, Eye, Ban } from 'lucide-react'
+import { Search, Trash2, X, Receipt, ShoppingCart, Tag, Check, Eye, Ban, ScanLine, Camera } from 'lucide-react'
+import { Html5Qrcode } from 'html5-qrcode'
 
 const METODOS_PAGO = [
   { value: 'efectivo', label: 'Efectivo', color: '#4ade80' },
@@ -31,8 +32,24 @@ export default function Facturacion() {
   const [ventaDetalle, setVentaDetalle] = useState(null)
   const [loadingDetalle, setLoadingDetalle] = useState(false)
 
+  // Scanner states
+  const [scannerOpen, setScannerOpen] = useState(false)
+  const [scannerError, setScannerError] = useState('')
+  const [scanning, setScanning] = useState(false)
+  const [scanResultado, setScanResultado] = useState(null) // { tipo: 'encontrado'|'no_encontrado', producto?, codigo }
+  const html5QrRef = useRef(null)
+
   useEffect(() => { loadProductos() }, [])
   useEffect(() => { if (tab === 'historial') loadVentas() }, [tab])
+
+  useEffect(() => {
+    if (scannerOpen) {
+      setTimeout(() => startScanner(), 300)
+    } else {
+      stopScanner()
+    }
+    return () => stopScanner()
+  }, [scannerOpen])
 
   async function loadProductos() {
     const { data } = await supabase.from('productos').select('*').eq('activo', true).order('nombre')
@@ -48,6 +65,74 @@ export default function Facturacion() {
       .limit(100)
     setVentas(data ?? [])
     setLoadingVentas(false)
+  }
+
+  async function startScanner() {
+    setScannerError('')
+    setScanResultado(null)
+    setScanning(true)
+    try {
+      const html5Qr = new Html5Qrcode('scanner-facturacion')
+      html5QrRef.current = html5Qr
+      const cameras = await Html5Qrcode.getCameras()
+      if (!cameras || cameras.length === 0) {
+        setScannerError('No se encontró ninguna cámara.')
+        setScanning(false)
+        return
+      }
+      const camara = cameras.find(c => c.label.toLowerCase().includes('back') || c.label.toLowerCase().includes('tras')) ?? cameras[cameras.length - 1]
+      await html5Qr.start(
+        camara.id,
+        { fps: 10, qrbox: { width: 250, height: 150 }, aspectRatio: 1.5 },
+        (decodedText) => onCodigoEscaneado(decodedText),
+        () => {}
+      )
+    } catch (err) {
+      setScannerError('No se pudo acceder a la cámara. Verificá los permisos.')
+      setScanning(false)
+    }
+  }
+
+  async function stopScanner() {
+    if (html5QrRef.current) {
+      try {
+        await html5QrRef.current.stop()
+        html5QrRef.current.clear()
+      } catch {}
+      html5QrRef.current = null
+    }
+    setScanning(false)
+  }
+
+  async function onCodigoEscaneado(codigo) {
+    await stopScanner()
+
+    const { data } = await supabase
+      .from('productos')
+      .select('*')
+      .eq('codigo', codigo)
+      .eq('activo', true)
+      .single()
+
+    if (data) {
+      setScanResultado({ tipo: 'encontrado', producto: data, codigo })
+    } else {
+      setScanResultado({ tipo: 'no_encontrado', codigo })
+    }
+  }
+
+  function confirmarAgregarEscaneado() {
+    if (scanResultado?.producto) {
+      agregarItem(scanResultado.producto)
+    }
+    setScannerOpen(false)
+    setScanResultado(null)
+    setCarritoVisible(true)
+  }
+
+  function cerrarScanner() {
+    setScannerOpen(false)
+    setScanResultado(null)
   }
 
   const prodFiltrados = productos.filter(p =>
@@ -198,7 +283,7 @@ export default function Facturacion() {
               <input
                 type="number" min="1" value={item.cantidad}
                 onChange={e => actualizarCantidad(item.producto_id, e.target.value)}
-                style={{ width: 46, textAlign: 'center', padding: '4px 4px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 7, color: 'var(--text)', fontSize: 13 }}
+                style={{ width: 46, textAlign: 'center', padding: '4px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 7, color: 'var(--text)', fontSize: 13 }}
               />
               <div style={{ fontSize: 13, fontWeight: 700, fontFamily: 'Outfit', minWidth: 64, textAlign: 'right' }}>
                 ${(item.precio_unitario * item.cantidad).toLocaleString('es-AR')}
@@ -227,24 +312,14 @@ export default function Facturacion() {
           <label className="form-label">Método de pago</label>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
             {METODOS_PAGO.map(m => (
-              <button
-                key={m.value}
-                type="button"
-                onClick={() => setMetodoPago(m.value)}
-                style={{
-                  padding: '8px 10px',
-                  borderRadius: 9,
-                  border: `1px solid ${metodoPago === m.value ? m.color : 'var(--border)'}`,
-                  background: metodoPago === m.value ? `${m.color}18` : 'var(--surface2)',
-                  color: metodoPago === m.value ? m.color : 'var(--text-muted)',
-                  cursor: 'pointer',
-                  fontSize: 12,
-                  fontWeight: 600,
-                  fontFamily: 'inherit',
-                  transition: 'all 0.15s',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4
-                }}
-              >
+              <button key={m.value} type="button" onClick={() => setMetodoPago(m.value)} style={{
+                padding: '8px 10px', borderRadius: 9,
+                border: `1px solid ${metodoPago === m.value ? m.color : 'var(--border)'}`,
+                background: metodoPago === m.value ? `${m.color}18` : 'var(--surface2)',
+                color: metodoPago === m.value ? m.color : 'var(--text-muted)',
+                cursor: 'pointer', fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
+                transition: 'all 0.15s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4
+              }}>
                 {metodoPago === m.value && <Check size={12} />}
                 {m.label}
               </button>
@@ -294,16 +369,20 @@ export default function Facturacion() {
         ))}
       </div>
 
-      {/* Nueva venta */}
       {tab === 'nueva' && (
         <>
-          {/* Desktop layout */}
+          {/* Desktop */}
           <div className="factura-desktop">
             <div>
               <div className="card" style={{ marginBottom: 16 }}>
-                <div style={{ position: 'relative' }}>
-                  <Search size={15} style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                  <input className="input" style={{ paddingLeft: 38 }} placeholder="Buscar producto..." value={search} onChange={e => setSearch(e.target.value)} />
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <div style={{ position: 'relative', flex: 1 }}>
+                    <Search size={15} style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                    <input className="input" style={{ paddingLeft: 38 }} placeholder="Buscar producto..." value={search} onChange={e => setSearch(e.target.value)} />
+                  </div>
+                  <button className="btn btn-secondary" onClick={() => setScannerOpen(true)} title="Escanear código">
+                    <ScanLine size={16} /> Escanear
+                  </button>
                 </div>
               </div>
               <div className="card" style={{ padding: 0 }}>
@@ -314,8 +393,7 @@ export default function Facturacion() {
                     {prodFiltrados.map(p => (
                       <div key={p.id} onClick={() => agregarItem(p)} style={{
                         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        padding: '12px 16px', cursor: 'pointer', borderBottom: '1px solid var(--border)',
-                        transition: 'background 0.15s'
+                        padding: '12px 16px', cursor: 'pointer', borderBottom: '1px solid var(--border)', transition: 'background 0.15s'
                       }}
                         onMouseEnter={e => e.currentTarget.style.background = 'var(--surface2)'}
                         onMouseLeave={e => e.currentTarget.style.background = ''}
@@ -341,17 +419,20 @@ export default function Facturacion() {
             </div>
           </div>
 
-          {/* Mobile layout */}
+          {/* Mobile */}
           <div className="factura-mobile">
-            {/* Buscador */}
             <div className="card" style={{ marginBottom: 12 }}>
-              <div style={{ position: 'relative' }}>
-                <Search size={15} style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                <input className="input" style={{ paddingLeft: 38 }} placeholder="Buscar producto..." value={search} onChange={e => setSearch(e.target.value)} />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ position: 'relative', flex: 1 }}>
+                  <Search size={15} style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                  <input className="input" style={{ paddingLeft: 38 }} placeholder="Buscar producto..." value={search} onChange={e => setSearch(e.target.value)} />
+                </div>
+                <button className="btn btn-secondary" onClick={() => setScannerOpen(true)} style={{ flexShrink: 0, padding: '9px 14px' }}>
+                  <ScanLine size={18} />
+                </button>
               </div>
             </div>
 
-            {/* Lista de productos */}
             <div className="card" style={{ padding: 0, marginBottom: 80 }}>
               {prodFiltrados.length === 0 ? (
                 <div className="empty-state"><ShoppingCart size={32} /><p>Sin resultados</p></div>
@@ -380,19 +461,15 @@ export default function Facturacion() {
             </div>
 
             {/* Botón flotante carrito */}
-            <button
-              onClick={() => setCarritoVisible(true)}
-              style={{
-                position: 'fixed', bottom: 20, right: 20,
-                background: 'linear-gradient(135deg, #1a5fa8, #1e4d8c)',
-                color: '#fff', border: 'none', borderRadius: 16,
-                padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 10,
-                fontSize: 15, fontWeight: 700, fontFamily: 'inherit',
-                boxShadow: '0 8px 24px rgba(26,95,168,0.5)',
-                cursor: 'pointer', zIndex: 150,
-                transition: 'transform 0.15s'
-              }}
-            >
+            <button onClick={() => setCarritoVisible(true)} style={{
+              position: 'fixed', bottom: 20, right: 20,
+              background: 'linear-gradient(135deg, #1a5fa8, #1e4d8c)',
+              color: '#fff', border: 'none', borderRadius: 16,
+              padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 10,
+              fontSize: 15, fontWeight: 700, fontFamily: 'inherit',
+              boxShadow: '0 8px 24px rgba(26,95,168,0.5)',
+              cursor: 'pointer', zIndex: 150, transition: 'transform 0.15s'
+            }}>
               <ShoppingCart size={20} />
               {items.length > 0 ? (
                 <>
@@ -406,10 +483,10 @@ export default function Facturacion() {
               )}
             </button>
 
-            {/* Carrito como modal en mobile */}
+            {/* Carrito modal mobile */}
             {carritoVisible && (
               <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && setCarritoVisible(false)}>
-                <div className="modal" style={{ maxWidth: '100%', margin: '0', borderRadius: '20px 20px 0 0', position: 'fixed', bottom: 0, left: 0, right: 0, maxHeight: '90vh' }}>
+                <div className="modal" style={{ maxWidth: '100%', margin: 0, borderRadius: '20px 20px 0 0', position: 'fixed', bottom: 0, left: 0, right: 0, maxHeight: '90vh' }}>
                   <div className="modal-header">
                     <span className="modal-title">Carrito</span>
                     <button className="modal-close" onClick={() => setCarritoVisible(false)}><X size={18} /></button>
@@ -433,7 +510,6 @@ export default function Facturacion() {
               <input className="input" style={{ paddingLeft: 38 }} placeholder="Buscar factura..." value={searchHistorial} onChange={e => setSearchHistorial(e.target.value)} />
             </div>
           </div>
-
           <div className="card" style={{ padding: 0 }}>
             {loadingVentas ? (
               <div style={{ padding: 40 }}><div className="spinner" /></div>
@@ -441,19 +517,13 @@ export default function Facturacion() {
               <div className="empty-state"><Receipt size={40} /><h3>Sin facturas</h3><p>Las ventas aparecerán aquí</p></div>
             ) : (
               <div>
-                {/* Desktop tabla */}
                 <div className="hist-desktop">
                   <div className="table-wrap">
                     <table>
                       <thead>
                         <tr>
-                          <th>Nro. Factura</th>
-                          <th>Fecha</th>
-                          <th>Método</th>
-                          <th>Descuento</th>
-                          <th>Total</th>
-                          <th>Estado</th>
-                          <th>Acciones</th>
+                          <th>Nro. Factura</th><th>Fecha</th><th>Método</th>
+                          <th>Descuento</th><th>Total</th><th>Estado</th><th>Acciones</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -479,8 +549,6 @@ export default function Facturacion() {
                     </table>
                   </div>
                 </div>
-
-                {/* Mobile cards */}
                 <div className="hist-mobile">
                   {ventasFiltradas.map(v => (
                     <div key={v.id} style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
@@ -512,6 +580,97 @@ export default function Facturacion() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal Escáner */}
+      {scannerOpen && (
+        <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && cerrarScanner()}>
+          <div className="modal" style={{ maxWidth: 400 }}>
+            <div className="modal-header">
+              <span className="modal-title"><Camera size={18} style={{ marginRight: 8, verticalAlign: 'middle' }} />Escanear producto</span>
+              <button className="modal-close" onClick={cerrarScanner}><X size={18} /></button>
+            </div>
+            <div className="modal-body">
+              {/* Cámara — se oculta cuando hay resultado */}
+              {!scanResultado && (
+                <>
+                  <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16, textAlign: 'center' }}>
+                    Apuntá la cámara al código de barras del producto
+                  </p>
+                  <div id="scanner-facturacion" style={{ width: '100%', borderRadius: 12, overflow: 'hidden', background: '#000', minHeight: 200 }} />
+                  {scannerError && (
+                    <div style={{ marginTop: 12, padding: '10px 14px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 10, color: '#f87171', fontSize: 13 }}>
+                      {scannerError}
+                    </div>
+                  )}
+                  {scanning && !scannerError && (
+                    <div style={{ textAlign: 'center', marginTop: 12, fontSize: 13, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                      <ScanLine size={15} style={{ color: '#1a5fa8' }} /> Buscando código...
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Resultado del escaneo */}
+              {scanResultado?.tipo === 'encontrado' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ width: 56, height: 56, background: 'rgba(34,197,94,0.15)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
+                      <Check size={26} color="#4ade80" />
+                    </div>
+                    <div style={{ fontFamily: 'Outfit', fontWeight: 700, fontSize: 16 }}>¡Producto encontrado!</div>
+                  </div>
+                  <div style={{ padding: '12px 16px', background: 'var(--surface2)', borderRadius: 12, border: '1px solid var(--border)' }}>
+                    <div style={{ fontWeight: 700, fontSize: 15 }}>{scanResultado.producto.nombre}</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
+                      <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                        Stock: <span style={{ color: scanResultado.producto.stock <= scanResultado.producto.stock_minimo ? '#facc15' : '#4ade80' }}>
+                          {scanResultado.producto.stock}
+                        </span>
+                      </span>
+                      <span style={{ fontFamily: 'Outfit', fontWeight: 700, fontSize: 16 }}>
+                        ${Number(scanResultado.producto.precio).toLocaleString('es-AR')}
+                      </span>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn btn-secondary" style={{ flex: 1, justifyContent: 'center' }} onClick={() => { setScanResultado(null); startScanner() }}>
+                      Escanear otro
+                    </button>
+                    <button className="btn btn-primary" style={{ flex: 1, justifyContent: 'center' }} onClick={confirmarAgregarEscaneado}>
+                      <ShoppingCart size={15} /> Agregar
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {scanResultado?.tipo === 'no_encontrado' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16, textAlign: 'center' }}>
+                  <div>
+                    <div style={{ width: 56, height: 56, background: 'rgba(239,68,68,0.1)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
+                      <X size={26} color="#f87171" />
+                    </div>
+                    <div style={{ fontFamily: 'Outfit', fontWeight: 700, fontSize: 16 }}>Producto no encontrado</div>
+                    <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
+                      Código: <strong style={{ color: 'var(--text)' }}>{scanResultado.codigo}</strong>
+                    </div>
+                    <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
+                      Este código no está registrado en el sistema.
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn btn-secondary" style={{ flex: 1, justifyContent: 'center' }} onClick={() => { setScanResultado(null); startScanner() }}>
+                      Reintentar
+                    </button>
+                    <button className="btn btn-primary" style={{ flex: 1, justifyContent: 'center' }} onClick={cerrarScanner}>
+                      Cerrar
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -581,17 +740,10 @@ export default function Facturacion() {
       )}
 
       <style>{`
-        .factura-desktop {
-          display: grid;
-          grid-template-columns: 1fr 380px;
-          gap: 20px;
-          align-items: start;
-        }
+        .factura-desktop { display: grid; grid-template-columns: 1fr 380px; gap: 20px; align-items: start; }
         .factura-mobile { display: none; }
         .hist-desktop { display: block; }
         .hist-mobile { display: none; }
-        .carrito-panel { /* shared styles */ }
-
         @media (max-width: 768px) {
           .factura-desktop { display: none; }
           .factura-mobile { display: block; }

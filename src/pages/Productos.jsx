@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
-import { Plus, Search, Edit2, Trash2, Package, X, AlertTriangle, ArrowUp, ArrowDown } from 'lucide-react'
+import { Plus, Search, Edit2, Trash2, Package, X, AlertTriangle, ArrowUp, ArrowDown, Camera, ScanLine } from 'lucide-react'
+import { Html5Qrcode } from 'html5-qrcode'
 
 const EMPTY_PRODUCTO = {
   nombre: '', descripcion: '', precio: '', costo: '',
@@ -21,8 +22,22 @@ export default function Productos() {
   const [stockMotivo, setStockMotivo] = useState('')
   const [saving, setSaving] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
+  const [scannerOpen, setScannerOpen] = useState(false)
+  const [scannerError, setScannerError] = useState('')
+  const [scanning, setScanning] = useState(false)
+  const scannerRef = useRef(null)
+  const html5QrRef = useRef(null)
 
   useEffect(() => { loadProductos() }, [])
+
+  useEffect(() => {
+    if (scannerOpen) {
+      setTimeout(() => startScanner(), 300)
+    } else {
+      stopScanner()
+    }
+    return () => stopScanner()
+  }, [scannerOpen])
 
   async function loadProductos() {
     setLoading(true)
@@ -33,6 +48,69 @@ export default function Productos() {
       .order('nombre')
     setProductos(data ?? [])
     setLoading(false)
+  }
+
+  async function startScanner() {
+    setScannerError('')
+    setScanning(true)
+    try {
+      const html5Qr = new Html5Qrcode('scanner-productos')
+      html5QrRef.current = html5Qr
+
+      const cameras = await Html5Qrcode.getCameras()
+      if (!cameras || cameras.length === 0) {
+        setScannerError('No se encontró ninguna cámara.')
+        setScanning(false)
+        return
+      }
+
+      // Preferir cámara trasera en mobile
+      const camara = cameras.find(c => c.label.toLowerCase().includes('back') || c.label.toLowerCase().includes('tras')) ?? cameras[cameras.length - 1]
+
+      await html5Qr.start(
+        camara.id,
+        { fps: 10, qrbox: { width: 250, height: 150 }, aspectRatio: 1.5 },
+        (decodedText) => onCodigoEscaneado(decodedText),
+        () => {}
+      )
+    } catch (err) {
+      setScannerError('No se pudo acceder a la cámara. Verificá los permisos.')
+      setScanning(false)
+    }
+  }
+
+  async function stopScanner() {
+    if (html5QrRef.current) {
+      try {
+        await html5QrRef.current.stop()
+        html5QrRef.current.clear()
+      } catch {}
+      html5QrRef.current = null
+    }
+    setScanning(false)
+  }
+
+  async function onCodigoEscaneado(codigo) {
+    await stopScanner()
+    setScannerOpen(false)
+
+    // Buscar si ya existe el producto
+    const { data } = await supabase
+      .from('productos')
+      .select('*')
+      .eq('codigo', codigo)
+      .eq('activo', true)
+      .single()
+
+    if (data) {
+      // Producto existe → abrir para editar
+      openEdit(data)
+    } else {
+      // Producto no existe → abrir formulario con código precargado
+      setEditando(null)
+      setForm({ ...EMPTY_PRODUCTO, codigo })
+      setModalOpen(true)
+    }
   }
 
   const filtered = productos.filter(p =>
@@ -118,9 +196,14 @@ export default function Productos() {
           <h1 className="page-title">Productos</h1>
           <p className="page-subtitle">{productos.length} productos en inventario</p>
         </div>
-        <button className="btn btn-primary" onClick={openCreate}>
-          <Plus size={16} /> Nuevo producto
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-secondary" onClick={() => setScannerOpen(true)}>
+            <ScanLine size={16} /> Escanear código
+          </button>
+          <button className="btn btn-primary" onClick={openCreate}>
+            <Plus size={16} /> Nuevo producto
+          </button>
+        </div>
       </div>
 
       {/* Search */}
@@ -149,7 +232,6 @@ export default function Productos() {
           </div>
         ) : (
           <>
-            {/* Desktop tabla */}
             <div className="prod-desktop">
               <div className="table-wrap">
                 <table>
@@ -180,11 +262,11 @@ export default function Productos() {
                               {p.stock <= p.stock_minimo && <AlertTriangle size={13} style={{ marginLeft: 5, verticalAlign: 'middle', color: '#facc15' }} />}
                             </span>
                             <div style={{ display: 'flex', gap: 4 }}>
-                              <button className="btn btn-sm btn-secondary" style={{ padding: '4px 8px' }} title="Entrada"
+                              <button className="btn btn-sm btn-secondary" style={{ padding: '4px 8px' }}
                                 onClick={() => { setStockModal({ producto: p, tipo: 'entrada' }); setStockCantidad(''); setStockMotivo('') }}>
                                 <ArrowUp size={13} style={{ color: '#4ade80' }} />
                               </button>
-                              <button className="btn btn-sm btn-secondary" style={{ padding: '4px 8px' }} title="Salida"
+                              <button className="btn btn-sm btn-secondary" style={{ padding: '4px 8px' }}
                                 onClick={() => { setStockModal({ producto: p, tipo: 'salida' }); setStockCantidad(''); setStockMotivo('') }}>
                                 <ArrowDown size={13} style={{ color: '#f87171' }} />
                               </button>
@@ -204,7 +286,6 @@ export default function Productos() {
               </div>
             </div>
 
-            {/* Mobile cards */}
             <div className="prod-mobile">
               {filtered.map(p => (
                 <div key={p.id} style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
@@ -219,16 +300,10 @@ export default function Productos() {
                       </div>
                     </div>
                     <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                      <div style={{ fontFamily: 'Outfit', fontWeight: 700, fontSize: 16 }}>
-                        ${Number(p.precio).toLocaleString('es-AR')}
-                      </div>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                        costo ${Number(p.costo).toLocaleString('es-AR')}
-                      </div>
+                      <div style={{ fontFamily: 'Outfit', fontWeight: 700, fontSize: 16 }}>${Number(p.precio).toLocaleString('es-AR')}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>costo ${Number(p.costo).toLocaleString('es-AR')}</div>
                     </div>
                   </div>
-
-                  {/* Stock y acciones */}
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{ fontSize: 13, fontWeight: 600, color: p.stock <= p.stock_minimo ? '#facc15' : '#4ade80' }}>
@@ -245,12 +320,8 @@ export default function Productos() {
                       </button>
                     </div>
                     <div style={{ display: 'flex', gap: 8 }}>
-                      <button className="btn btn-sm btn-secondary" onClick={() => openEdit(p)}>
-                        <Edit2 size={13} />
-                      </button>
-                      <button className="btn btn-sm btn-danger" onClick={() => setDeleteConfirm(p)}>
-                        <Trash2 size={13} />
-                      </button>
+                      <button className="btn btn-sm btn-secondary" onClick={() => openEdit(p)}><Edit2 size={13} /></button>
+                      <button className="btn btn-sm btn-danger" onClick={() => setDeleteConfirm(p)}><Trash2 size={13} /></button>
                     </div>
                   </div>
                 </div>
@@ -259,6 +330,34 @@ export default function Productos() {
           </>
         )}
       </div>
+
+      {/* Modal Escáner */}
+      {scannerOpen && (
+        <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && setScannerOpen(false)}>
+          <div className="modal" style={{ maxWidth: 400 }}>
+            <div className="modal-header">
+              <span className="modal-title"><Camera size={18} style={{ marginRight: 8, verticalAlign: 'middle' }} />Escanear código</span>
+              <button className="modal-close" onClick={() => setScannerOpen(false)}><X size={18} /></button>
+            </div>
+            <div className="modal-body">
+              <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16, textAlign: 'center' }}>
+                Apuntá la cámara al código de barras del producto
+              </p>
+              <div id="scanner-productos" style={{ width: '100%', borderRadius: 12, overflow: 'hidden', background: '#000', minHeight: 200 }} />
+              {scannerError && (
+                <div style={{ marginTop: 12, padding: '10px 14px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 10, color: '#f87171', fontSize: 13 }}>
+                  {scannerError}
+                </div>
+              )}
+              {scanning && !scannerError && (
+                <div style={{ textAlign: 'center', marginTop: 12, fontSize: 13, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                  <ScanLine size={15} style={{ color: '#1a5fa8' }} /> Buscando código...
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal Crear/Editar */}
       {modalOpen && (
@@ -270,9 +369,14 @@ export default function Productos() {
             </div>
             <form onSubmit={saveProducto}>
               <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {form.codigo && !editando && (
+                  <div style={{ padding: '10px 14px', background: 'rgba(26,95,168,0.1)', border: '1px solid rgba(26,95,168,0.25)', borderRadius: 10, fontSize: 13, color: '#7eb8f5', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <ScanLine size={15} /> Código escaneado: <strong>{form.codigo}</strong>
+                  </div>
+                )}
                 <div>
                   <label className="form-label">Nombre *</label>
-                  <input className="input" value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} required placeholder="Nombre del producto" />
+                  <input className="input" value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} required placeholder="Nombre del producto" autoFocus />
                 </div>
                 <div>
                   <label className="form-label">Descripción</label>
@@ -384,7 +488,6 @@ export default function Productos() {
       <style>{`
         .prod-desktop { display: block; }
         .prod-mobile { display: none; }
-
         @media (max-width: 768px) {
           .prod-desktop { display: none; }
           .prod-mobile { display: block; }
