@@ -14,7 +14,10 @@ export default function Dashboard() {
   const [chartData, setChartData] = useState([])
   const [loading, setLoading] = useState(true)
 
-  const today = format(new Date(), "yyyy-MM-dd")
+  const now = new Date()
+  const today = format(now, "yyyy-MM-dd")
+  const todayStart = `${today}T00:00:00-03:00`
+  const todayEnd = `${today}T23:59:59-03:00`
 
   useEffect(() => { loadDashboard() }, [])
 
@@ -23,8 +26,8 @@ export default function Dashboard() {
       const { data: ventasHoy } = await supabase
         .from('ventas')
         .select('total')
-        .gte('created_at', `${today}T00:00:00`)
-        .lte('created_at', `${today}T23:59:59`)
+        .gte('created_at', todayStart)
+        .lte('created_at', todayEnd)
         .eq('estado', 'completada')
 
       const totalHoy = ventasHoy?.reduce((s, v) => s + Number(v.total), 0) ?? 0
@@ -57,8 +60,8 @@ export default function Dashboard() {
         const { data } = await supabase
           .from('ventas')
           .select('total')
-          .gte('created_at', `${dia}T00:00:00`)
-          .lte('created_at', `${dia}T23:59:59`)
+          .gte('created_at', `${dia}T00:00:00-03:00`)
+          .lte('created_at', `${dia}T23:59:59-03:00`)
           .eq('estado', 'completada')
         const total = data?.reduce((s, v) => s + Number(v.total), 0) ?? 0
         return { dia: format(new Date(dia + 'T12:00:00'), 'EEE', { locale: es }), total }
